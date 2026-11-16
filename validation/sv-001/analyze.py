@@ -7,8 +7,9 @@ scores.csv    domain, scorer, score            (written by run_scores.py)
 outcomes.csv  domain, engine, answers, named, cited   (exported from the Census100 collection)
 covars.csv    domain, dr                       (optional, --covars; Ahrefs Domain Rating)
 
-For each scorer and outcome it reports Spearman's rank correlation with a p-value from
-seeded permutations. Standard library only. The decision rule is fixed in
+For each scorer it first reports the spread of the scores (correction of 16 Nov 2026 in the
+protocol), then, for each scorer and outcome, Spearman's rank correlation with a p-value from
+seeded permutations and Kendall's tau-b beside it. Standard library only. The decision rule is fixed in
 ../SV-001-protocol.md and is not a parameter here.
 """
 import argparse
@@ -22,6 +23,10 @@ SEED = 20261110
 PERMUTATIONS = 100000
 ALPHA = 0.025            # two primary tests, Bonferroni from 0.05
 MIN_N = 15               # fewer scored brands than this: arm reported as not testable
+BAND = 10                # correction 16 Nov 2026: spread check band width, in score points
+BAND_SHARE = 0.75        # 15 of 20: this share of scores (rounded up) inside one band = too little spread
+HIGH = 90                # reported: scores at or above this
+GEO_AUDIT_CAP = 60       # geo-audit caps the score at 60 when a critical check fails (cli/geo-audit.mjs)
 
 
 def ranks(values):
@@ -68,6 +73,60 @@ def perm_p(x, y, n_perm=PERMUTATIONS, seed=SEED):
         if abs(pearson(rx, ry)) >= abs(obs) - 1e-12:
             hits += 1
     return obs, (hits + 1) / (n_perm + 1)
+
+
+def kendall_tau_b(x, y):
+    """Kendall's tau-b, ties corrected. Secondary statistic (correction of 16 Nov 2026)."""
+    n = len(x)
+    conc = disc = tx = ty = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx, dy = x[i] - x[j], y[i] - y[j]
+            if dx == 0 and dy == 0:
+                continue
+            if dx == 0:
+                tx += 1
+            elif dy == 0:
+                ty += 1
+            elif (dx > 0) == (dy > 0):
+                conc += 1
+            else:
+                disc += 1
+    den = math.sqrt((conc + disc + tx) * (conc + disc + ty))
+    return float("nan") if den == 0 else (conc - disc) / den
+
+
+def tied_share(values):
+    """Share of scores that equal at least one other score."""
+    if not values:
+        return float("nan")
+    counts = defaultdict(int)
+    for v in values:
+        counts[v] += 1
+    return sum(c for c in counts.values() if c > 1) / len(values)
+
+
+def max_in_band(values, width=BAND):
+    """Largest number of scores that fit inside one closed band of the given width."""
+    v = sorted(values)
+    best = j = 0
+    for i in range(len(v)):
+        while v[i] - v[j] > width:
+            j += 1
+        best = max(best, i - j + 1)
+    return best
+
+
+def spread(scorer, values):
+    """Spread check fixed by the 16 Nov 2026 correction. Read before any correlation."""
+    n = len(values)
+    need = math.ceil(BAND_SHARE * n) if n else 0
+    in_band = max_in_band(values)
+    return {"scorer": scorer, "n": n, "sorted": sorted(values),
+            "high": sum(1 for v in values if v >= HIGH),
+            "capped": sum(1 for v in values if v <= GEO_AUDIT_CAP) if "geo-doctor" in scorer else None,
+            "in_band": in_band, "need": need, "tied_share": tied_share(values),
+            "too_narrow": n > 0 and in_band >= need}
 
 
 def partial_spearman(x, y, z):
@@ -118,9 +177,14 @@ def read_covars(path):
         return {r["domain"].strip().lower(): float(r["dr"]) for r in csv.DictReader(f) if (r.get("dr") or "").strip()}
 
 
-def verdict(n, rho, p):
+NARROW = "the scores do not vary enough across these pages to test the question"
+
+
+def verdict(n, rho, p, too_narrow=False):
     if n < MIN_N:
         return "not testable (fewer than %d scored brands)" % MIN_N
+    if too_narrow:
+        return NARROW
     if math.isnan(rho):
         return "not testable (no variation)"
     if p < ALPHA and rho > 0:
@@ -135,22 +199,24 @@ def analyze(scores, outcomes, covars=None, n_perm=PERMUTATIONS):
     engines = sorted({e for v in outcomes.values() for e in v})
     engines = ["all"] + [e for e in engines if e != "all"]
     for scorer in sorted(scores):
+        narrow = spread(scorer, list(scores[scorer].values()))["too_narrow"]
         for engine in engines:
             for measure, idx in (("named", 1), ("cited", 2)):
                 doms = [d for d in sorted(scores[scorer]) if engine in outcomes.get(d, {}) and outcomes[d][engine][0] > 0]
                 x = [scores[scorer][d] for d in doms]
                 y = [outcomes[d][engine][idx] / outcomes[d][engine][0] for d in doms]
                 if len(doms) < 3:
-                    rho, p = float("nan"), float("nan")
+                    rho, p, tau = float("nan"), float("nan"), float("nan")
                 else:
                     rho, p = perm_p(x, y, n_perm=n_perm)
+                    tau = kendall_tau_b(x, y)
                 part = float("nan")
                 if covars and len(doms) >= 4 and all(d in covars for d in doms):
                     part = partial_spearman(x, y, [covars[d] for d in doms])
                 primary = engine == "all" and measure == "named"
                 rows.append({"scorer": scorer, "engine": engine, "measure": measure, "n": len(doms),
-                             "rho": rho, "p": p, "partial_rho_dr": part, "primary": primary,
-                             "verdict": verdict(len(doms), rho, p) if primary else ""})
+                             "rho": rho, "p": p, "tau_b": tau, "partial_rho_dr": part, "primary": primary,
+                             "verdict": verdict(len(doms), rho, p, narrow) if primary else ""})
     return rows
 
 
@@ -158,8 +224,21 @@ def fmt(v, nd=2):
     return "n/a" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.{nd}f}"
 
 
-def render(rows):
-    out = ["# SV-001 readout", "",
+def render(rows, spreads=()):
+    out = ["# SV-001 readout", ""]
+    if spreads:
+        out += ["## Score spread (read first)", "",
+                f"If {int(BAND_SHARE * 100)}% or more of a script's scores (15 of 20) sit inside one {BAND}-point band, "
+                "no correlation is read for that script.", "",
+                "| Scorer | Pages scored | Scores, sorted | 90 or above | At or below the 60 cap | "
+                f"Most inside one {BAND}-point band | Tied scores | Too little spread |",
+                "|---|---|---|---|---|---|---|---|"]
+        for s in spreads:
+            cap = "n/a" if s["capped"] is None else str(s["capped"])
+            out.append(f"| {s['scorer']} | {s['n']} | {', '.join(f'{v:g}' for v in s['sorted'])} | {s['high']} | {cap} | "
+                       f"{s['in_band']} (limit {s['need']}) | {fmt(s['tied_share'] * 100, 0)}% | {'yes' if s['too_narrow'] else 'no'} |")
+        out.append("")
+    out += [
            "Spearman rank correlation between each audit score and the share of Census100 answers "
            f"that name (or cite) the brand. p from {PERMUTATIONS:,} seeded permutations, two-sided. "
            f"Primary tests: pooled engines, named share, one per scorer, alpha {ALPHA} each.", "",
@@ -170,10 +249,10 @@ def render(rows):
     out += ["", "\"No relationship detected\" is not \"the score does not work\". With about 20 brands "
             "this test only finds strong relationships; see the protocol for what it can detect.", "",
             "## All comparisons (secondary, no verdicts)", "",
-            "| Scorer | Engine | Outcome | Brands | rho | p | rho with DR held fixed |", "|---|---|---|---|---|---|---|"]
+            "| Scorer | Engine | Outcome | Brands | rho | p | Kendall tau-b | rho with DR held fixed |", "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         out.append(f"| {r['scorer']} | {r['engine']} | {r['measure']} | {r['n']} | {fmt(r['rho'])} | "
-                   f"{fmt(r['p'], 3)} | {fmt(r['partial_rho_dr'])} |")
+                   f"{fmt(r['p'], 3)} | {fmt(r['tau_b'])} | {fmt(r['partial_rho_dr'])} |")
     return "\n".join(out) + "\n"
 
 
@@ -184,8 +263,10 @@ def main(argv=None):
     ap.add_argument("--covars")
     ap.add_argument("--out-md")
     a = ap.parse_args(argv)
-    rows = analyze(read_scores(a.scores), read_outcomes(a.outcomes), read_covars(a.covars) if a.covars else None)
-    md = render(rows)
+    scores = read_scores(a.scores)
+    spreads = [spread(k, list(v.values())) for k, v in sorted(scores.items())]
+    rows = analyze(scores, read_outcomes(a.outcomes), read_covars(a.covars) if a.covars else None)
+    md = render(rows, spreads)
     if a.out_md:
         with open(a.out_md, "w", encoding="utf-8") as f:
             f.write(md)

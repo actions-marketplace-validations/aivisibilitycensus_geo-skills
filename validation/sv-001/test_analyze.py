@@ -42,6 +42,38 @@ class TestStats(unittest.TestCase):
         self.assertLess(abs(A.partial_spearman(x, y, z)), A.spearman(x, y))
 
 
+class TestCorrection20261116(unittest.TestCase):
+    def test_kendall_tau_b(self):
+        self.assertAlmostEqual(A.kendall_tau_b([1, 2, 3, 4], [1, 2, 3, 4]), 1.0)
+        self.assertAlmostEqual(A.kendall_tau_b([1, 2, 3, 4], [4, 3, 2, 1]), -1.0)
+        # scipy.stats.kendalltau([1, 2, 2, 3], [1, 3, 2, 4]) -> 0.9128709291752769
+        self.assertAlmostEqual(A.kendall_tau_b([1, 2, 2, 3], [1, 3, 2, 4]), 0.9128709291752769, places=9)
+
+    def test_tied_share(self):
+        self.assertAlmostEqual(A.tied_share([50, 50, 60, 70]), 0.5)
+        self.assertAlmostEqual(A.tied_share([1, 2, 3]), 0.0)
+
+    def test_band(self):
+        self.assertEqual(A.max_in_band([10, 15, 20, 21, 40]), 3)     # 10..20 closed band
+        wide = [float(v) for v in range(0, 100, 5)]                   # 20 scores, 5 apart
+        self.assertFalse(A.spread("geo-doctor audit", wide)["too_narrow"])
+        narrow = [90.0] * 15 + [10.0, 20.0, 30.0, 40.0, 50.0]
+        s = A.spread("geo-doctor audit", narrow)
+        self.assertTrue(s["too_narrow"])
+        self.assertEqual((s["need"], s["high"], s["capped"]), (15, 15, 5))
+        self.assertIsNone(A.spread("geo-seo-claude citability", narrow)["capped"])
+
+    def test_narrow_spread_blocks_the_verdict(self):
+        self.assertEqual(A.verdict(20, 0.9, 0.0001, too_narrow=True), A.NARROW)
+        doms = [f"d{i}.example" for i in range(20)]
+        scores = {"s": {d: (95.0 if i < 16 else float(i)) for i, d in enumerate(doms)}}
+        outcomes = {d: {"chatgpt": (100, i * 4, i * 2)} for i, d in enumerate(doms)}
+        for d in outcomes:
+            outcomes[d]["all"] = outcomes[d]["chatgpt"]
+        rows = A.analyze(scores, outcomes, n_perm=200)
+        self.assertEqual([r["verdict"] for r in rows if r["primary"]], [A.NARROW])
+
+
 class TestVerdicts(unittest.TestCase):
     def test_rule(self):
         self.assertEqual(A.verdict(20, 0.7, 0.001), "score goes with the outcome")

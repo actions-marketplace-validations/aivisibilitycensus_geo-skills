@@ -58,6 +58,7 @@ Brand and domain matching is the Census100's own, fixed in the category file bef
 | rho below 0 and p below 0.025 | The score goes against being named in this category |
 | Anything else | No relationship detected |
 | Fewer than 15 brands scored by a script | That script is not testable here |
+| 15 or more of a script's 20 scores inside one 10-point band (checked first; added by the correction of 16 November 2026) | The scores do not vary enough across these pages to test the question |
 
 **Secondary, reported without verdicts:** the same correlation per engine; against cited share; with Ahrefs Domain Rating held fixed (partial rank correlation; DR read on the scoring day), because large brands may both score well and be named often for unrelated reasons; and the primary test without the two product pages.
 
@@ -74,6 +75,8 @@ Simulated with the analysis script before registration (2,000-permutation tests 
 | 0 (no relationship) | 2% false alarms |
 
 So this study can find a strong relationship and will usually miss a moderate one. "No relationship detected" will mean exactly that. It will not mean the scores are useless, and the write-up will not say so.
+
+The geo-audit score checks whether AI crawlers can reach and read one brand-owned page at the moment of the check. The outcome counts how often the brand is named in AI answers, which often draw on other pages, including third-party ones. A null result for that script means its score does not track naming for these 20 brands, not that its checks are useless. (Added by the correction of 16 November 2026.)
 
 It is one software category of large, well-known brands. A result here does not carry over to local firms or small sites.
 
@@ -96,3 +99,8 @@ The AI Visibility Census publishes its own free GEO skills in this repository, i
 ## Corrections
 
 - 10 November 2026, about 17:00 UTC, before any score or answer was collected: the Question section first said the review covered ten repositories and found no claim. It covered nine outside repositories, and a second search found the unsourced "10-point" claim quoted above. The wording was corrected. No script, page, outcome, test or rule changed.
+- 16 November 2026, about 13:30 UTC. This is an addition, not the correction of an error, and it was made after scoring: both scripts scored the 20 pages on 14 November 2026 at 09:01 UTC (`sv-001/runs/2026-11-14/scores.csv`), so the scores already existed when these rules were written. It comes before any outcome is computed (collection dates 13 and 17 November 2026). The person who wrote it did not open the score file or the raw output first. It follows a comment by the geo-doctor maintainer on Fangx-AI/geo-doctor#53. The primary statistic, the permutation test, alpha and the existing rows of the decision rule are unchanged. `sv-001/analyze.py` and its tests are updated in the same commit to apply items 1 and 2.
+  1. **Score spread first.** For each script, the readout shows the scores sorted, how many are 90 or above, and (for geo-audit) how many are at or below 60, the cap `cli/geo-audit.mjs` applies when a critical check fails. If 15 or more of a script's 20 scores fall inside one 10-point band (if fewer than 20 pages are scored: three quarters of those scored, rounded up), that script's result is reported as "the scores do not vary enough across these pages to test the question" and no correlation is read for it. This adds one row to the decision rule, checked before the others.
+  2. **Ties.** Spearman's rho already uses average ranks for tied scores (`ranks()` in `analyze.py`, unchanged). The readout adds the share of tied scores for each script, and Kendall's tau-b beside rho as a secondary statistic, without a verdict.
+  3. **What the geo-audit score measures.** Added to "What 20 brands can and cannot show": geo-audit checks whether AI crawlers can reach and read one brand-owned page at the moment of the check (fetch and status, robots.txt rules for AI search crawlers, responses to crawler user agents, noindex, canonical, extractable text). The outcome counts how often the brand is named in AI answers, and those answers often draw on other pages, including third-party ones. A null result means the score does not track naming for these 20 brands. It does not mean the checks are useless.
+  4. **Version.** On 16 November 2026 the maintainer stated that `cli/geo-audit.mjs` is unchanged between the pinned commit `3c15897` and master. Checked the same day: `git diff 3c158973a9388b66cbb33a3c722ecf26a677b971 fc0349a -- cli/geo-audit.mjs` is empty (`fc0349a` was master on 16 November). No re-run is needed.
