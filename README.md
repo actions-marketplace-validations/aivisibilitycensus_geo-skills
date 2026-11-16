@@ -1,6 +1,6 @@
 # GEO skills
 
-[![tests](https://github.com/aivisibilitycensus/geo-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/aivisibilitycensus/geo-skills/actions/workflows/tests.yml) [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE) [![Docs and data: CC BY 4.0](https://img.shields.io/badge/docs%20%26%20data-CC%20BY%204.0-lightgrey.svg)](LICENSE-docs)
+[![tests](https://github.com/aivisibilitycensus/geo-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/aivisibilitycensus/geo-skills/actions/workflows/tests.yml) [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE) [![Docs and data: CC BY 4.0](https://img.shields.io/badge/docs%20%26%20data-CC%20BY%204.0-lightgrey.svg)](LICENSE-docs) [![Listed in Awesome SEO & GEO Skills](https://img.shields.io/badge/Listed_in-Awesome_SEO_%26_GEO_Skills-2da44e)](https://github.com/UnderleveledBuilder/awesome-seo-geo-skills)
 
 **Your GEO audit says 87 out of 100. Can ChatGPT's crawler even reach the page?**
 
