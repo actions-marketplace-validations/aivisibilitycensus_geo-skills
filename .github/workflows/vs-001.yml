@@ -3,8 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: "generate only: model ID for the Anthropic API"
+        description: "generate only: model ID for the chosen provider"
         default: "claude-sonnet-4-5"
+      provider:
+        description: "generate only: anthropic, google, groq or mistral"
+        default: "anthropic"
+      label:
+        description: "generate only: folder under data/ai (claude, gemini, llama, mistral)"
+        default: "claude"
       job:
         description: "sample (CDX lists), fetch (human articles), generate (AI articles via API), check (run checkers), all"
         required: true
@@ -39,10 +45,14 @@ jobs:
       - name: Build AI prompts
         if: inputs.job == 'fetch' || inputs.job == 'all'
         run: node prompts.mjs
-      - name: Generate AI articles (Anthropic API, Appendix B prompt only)
+      - name: Generate AI articles (model API, Appendix B prompt only)
         if: inputs.job == 'generate'
-        env: {ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}"}
-        run: node generate.mjs --provider anthropic --model "${{ inputs.model || 'claude-sonnet-4-5' }}" --label claude
+        env:
+          ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}"
+          GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}"
+          GROQ_API_KEY: "${{ secrets.GROQ_API_KEY }}"
+          MISTRAL_API_KEY: "${{ secrets.MISTRAL_API_KEY }}"
+        run: node generate.mjs --provider "${{ inputs.provider || 'anthropic' }}" --model "${{ inputs.model || 'claude-sonnet-4-5' }}" --label "${{ inputs.label || 'claude' }}"
       - name: Run checkers
         if: inputs.job == 'check' || inputs.job == 'all'
         run: |
