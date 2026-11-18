@@ -6,7 +6,7 @@
 //
 //   ANTHROPIC_API_KEY=... node generate.mjs --provider anthropic --model claude-sonnet-4-5 --label claude
 //
-// Only the Anthropic provider is implemented so far; others are added as separate branches of callModel.
+// Providers: anthropic (ANTHROPIC_API_KEY), google (GEMINI_API_KEY), groq (GROQ_API_KEY), mistral (MISTRAL_API_KEY).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,6 +35,36 @@ async function callModel(prompt) {
     if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()).slice(0, 200));
     const j = await res.json();
     return { text: j.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), model: j.model, usage: j.usage, stop: j.stop_reason };
+  }
+  // OpenAI-compatible chat APIs (Groq for open models, Mistral). One user message, no system prompt, default sampling.
+  const compat = { groq: ['https://api.groq.com/openai/v1/chat/completions', 'GROQ_API_KEY'], mistral: ['https://api.mistral.ai/v1/chat/completions', 'MISTRAL_API_KEY'] };
+  if (compat[provider]) {
+    const [url, envName] = compat[provider];
+    const key = process.env[envName];
+    if (!key) throw new Error(envName + ' is not set');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
+      body: JSON.stringify({ model, max_tokens: 8192, messages: [{ role: 'user', content: prompt }] })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()).slice(0, 200));
+    const j = await res.json();
+    const c = j.choices[0];
+    return { text: c.message.content, model: j.model || model, usage: { input_tokens: j.usage?.prompt_tokens ?? '', output_tokens: j.usage?.completion_tokens ?? '' }, stop: c.finish_reason };
+  }
+  if (provider === 'google') {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error('GEMINI_API_KEY is not set');
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 8192 } })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()).slice(0, 200));
+    const j = await res.json();
+    const c = j.candidates?.[0];
+    if (!c) throw new Error('no candidate returned');
+    return { text: (c.content?.parts || []).map(x => x.text || '').join(''), model: j.modelVersion || model, usage: { input_tokens: j.usageMetadata?.promptTokenCount ?? '', output_tokens: j.usageMetadata?.candidatesTokenCount ?? '' }, stop: c.finishReason };
   }
   throw new Error('unknown provider ' + provider);
 }

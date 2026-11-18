@@ -87,6 +87,10 @@ Give:
 
 Do not rewrite the whole piece unless asked. Do not invent names, numbers or customers in suggested fixes; mark placeholders clearly, for example "[a customer you can name]".
 
+## Worked example
+
+[examples/](examples/) has a synthetic draft, its rewrite, and the report this skill gives the draft, with the web tool's real results on both files.
+
 ## What this skill does not do
 
 - It is not an AI detector. It does not say who wrote a piece or give a probability. Human writers fail these checks and edited AI text can pass them.
